@@ -23,11 +23,147 @@ The *XML parse driver* extension can be installed manually or automatically usin
 
 ### Installation using the wee_extension utility ###
 
-1.  To be written
+1.  Download the latest *XML parse driver* extension from the *XML parse driver* extension [releases page](https://github.com/gjr80/weewx-xmlparse/releases) into a directory accessible from the WeeWX machine.
+
+        $ wget -P $DOWNLOAD_ROOT https://github.com/gjr80/weewx-xmlparse/releases/download/v0.1.0/xmlparse-0.1.0.tar.gz
+
+    where *$DOWNLOAD_ROOT* is the path to the directory where the *XML parse driver* extension is to be downloaded.
+
+1.  Stop WeeWX:
+
+        $ sudo /etc/init.d/weewx stop
+
+    or
+
+        $ sudo service weewx stop
+
+    or
+
+        $ sudo systemctl stop weewx
+
+3.  Install the *XML parse driver* extension downloaded at step 1 using the *wee_extension* utility:
+
+        $ wee_extension --install=$DOWNLOAD_ROOT/xmlparse-0.1.0.tar.gz
+
+    This will result in output similar to the following:
+
+        Request to install '/var/tmp/xmlparse-0.1.0.tar.gz'
+        Extracting from tar archive /var/tmp/xmlparse-0.1.0.tar.gz
+        Saving installer file to /home/weewx/bin/user/installer/xmlparse
+        Saved configuration dictionary. Backup copy at /home/weewx/weewx.conf.20180828124410
+        Finished installing extension '/var/tmp/xmlparse-0.1.0.tar.gz'
+
+1.  Select the *XML parse driver* and do a basic driver configuration:
+
+        $ sudo /home/weewx/bin/wee_config --reconfigure
+
+    or
+
+        $ sudo /usr/share/weewx/wee_config --reconfigure
+
+1.  Edit *weewx.conf* and complete the required mappings in *[XML]* *[[sensor_map]]* section. Refer to [Sensor maps]() in the *XML parse driver* wiki for details on how to enter sensor and unit maps. In additon, there are short form notes on the sensor and unit maps in the comments at the start of the *xmlparse.py* file.
+
+1.  [Run WeeWX directly](http://weewx.com/docs/usersguide.htm#Running_directly) and confirm that loop packets and archive records are being generated and the data is appears valid:
+
+        $ sudo /home/weewx/bin/weewxd /home/weewx/weewx.conf
+
+    or
+
+        $ sudo /usr/share/weewx/weewxd /etc/weewx/weewx.conf
+
+    **Note:** The above commands include the appropriate paths for a default *setup.py* and package WeeWX installs accordingly. If you have modified the WeeWX install locations it may be necessary to prefix *weewxd* and *weewx.conf* with different paths.
+
+    You should now see something like below with a series of loop packets (indicated by *LOOP:* preceding each line) every *poll_interval* seconds and archive records (indicated by *REC:* preceding each line) every archive interval seconds:
+
+        Some sample LOOP: and REC: output
+
+    The above indicates that the XML file is being read, valid data is being extracted, loop packets are being emitted by the driver and WeeWX is constructing archive records from the accumulated loop data.
+
+1.  If all appears correct when run directly you can stop WeeWX by entering *Ctl-Z* in the terminal and you can now start WeeWX as a daemon:
+
+        $ sudo /etc/init.d/weewx start
+
+    or
+
+        $ sudo service weewx start
+
+    or
+
+        $ sudo systemctl start weewx
+
+1.  The WeeWX log should be monitored to verify archive records are being saved.
 
 ### Manual installation ###
 
-1.  To be written
+1.  Download the latest *XML parse driver* extension from the *XML parse driver* extension [releases page](https://github.com/gjr80/weewx-xmlparse/releases) into a directory accessible from the WeeWX machine.
+
+        $ wget -P $DOWNLOAD_ROOT https://github.com/gjr80/weewx-xmlparse/releases/download/v0.1.0/xmlparse-0.1.0.tar.gz
+
+    where *$DOWNLOAD_ROOT* is the path to the directory where the *XML parse driver* extension is to be downloaded.
+
+1.  Stop WeeWX:
+
+        $ sudo /etc/init.d/weewx stop
+
+    or
+
+        $ sudo service weewx stop
+
+    or
+
+        $ sudo systemctl stop weewx
+
+1.  Unpack the extension as follows:
+
+        $ tar xvfz xmlparse-0.1.0.tar.gz
+
+1.  Copy files from within the resulting directory as follows:
+
+        $ cp xmlparse/bin/user/xmlparse.py /home/weewx/bin/user
+
+    or
+
+        $ cp xmlparse/bin/user/xmlparse.py /usr/share/weewx/user
+
+1.  Select the *XML parse driver* and do a basic driver configuration:
+
+        $ sudo /home/weewx/bin/wee_config --reconfigure
+
+    or
+
+        $ sudo /usr/share/weewx/wee_config --reconfigure
+
+1.  Edit *weewx.conf* and complete the required mappings in *[XML]* *[[sensor_map]]* section. Refer to [Sensor maps]() in the *XML parse driver* wiki for details on how to enter sensor and unit maps. In additon, there are short form notes on the sensor and unit maps in the comments at the start of the *xmlparse.py* file.
+
+1.  [Run WeeWX directly](http://weewx.com/docs/usersguide.htm#Running_directly) and confirm that loop packets and archive records are being generated and the data is appears valid:
+
+        $ sudo /home/weewx/bin/weewxd /home/weewx/weewx.conf
+
+    or
+
+        $ sudo /usr/share/weewx/weewxd /etc/weewx/weewx.conf
+
+    **Note:** The above commands include the appropriate paths for a default *setup.py* and package WeeWX installs accordingly. If you have modified the WeeWX install locations it may be necessary to prefix *weewxd* and *weewx.conf* with different paths.
+
+    You should now see something like below with a series of loop packets (indicated by *LOOP:* preceding each line) every *poll_interval* seconds and archive records (indicated by *REC:* preceding each line) every archive interval seconds:
+
+        Some sample LOOP: and REC: output
+
+    The above indicates that the XML file is being read, valid data is being extracted, loop packets are being emitted by the driver and WeeWX is constructing archive records from the accumulated loop data.
+
+1.  If all appears correct when run directly you can stop WeeWX by entering *Ctl-Z* in the terminal and you can now start WeeWX as a daemon:
+
+        $ sudo /etc/init.d/weewx start
+
+    or
+
+        $ sudo service weewx start
+
+    or
+
+        $ sudo systemctl start weewx
+
+1.  The WeeWX log should be monitored to verify archive records are being saved.
 
 ## Support ##
 
