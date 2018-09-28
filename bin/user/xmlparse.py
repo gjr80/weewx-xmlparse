@@ -18,23 +18,16 @@
 # You should have received a copy of the GNU General Public License along with
 # this program.  If not, see http://www.gnu.org/licenses/.
 #
-# Version: 0.1.0                                    Date: 25 September 2018
+# Version: 0.1.0                                    Date: 28 September 2018
 #
 # Revision History
-#   25 September 2018   v0.1.0
+#   28 September 2018   v0.1.0
 #       - initial release
 #
 """A weeWX driver that reads data from a XML file.
 
-This driver will read data from a file.  Each line of the file is a
-name=value pair, for example:
+This driver will ...
 
-temperature=50
-humidity=54
-in_temperature=75
-
-The units must be in the weewx.US unit system:
-   degree_F, inHg, inch, inch_per_hour, mile_per_hour
 
 To use this driver, put this file in the weewx user directory, then make
 the following changes to weewx.conf:
@@ -177,6 +170,7 @@ import weeutil
 import weewx
 import weewx.drivers
 import weewx.units
+import weewx.wxformulas
 from weeutil.weeutil import ListOfDicts
 
 DRIVER_NAME = 'XmlParse'
@@ -279,13 +273,20 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
                     print "ingoring invalid unit specification"
         self.sensor_map = _sensor_map
 
+        # is the rain field cumulative or a delta
+        self.rain_delta = weeutil.weeutil.to_bool(xml_config_dict.get('rain_delta',
+                                                                      False))
+        self.old_rain = None
+
         loginf("data file is %s" % self.path)
         loginf("polling interval is %s" % self.poll_interval)
-        login("time_zone is %s" % (self.time_zone, ))
+        loginf("time_zone is %s" % (self.time_zone, ))
         loginf('sensor map is %s' % self.sensor_map)
 
     def genLoopPackets(self):
         while True:
+            # read xml from the source file
+            self.xml.read_file()
             # read whatever values we can get from the file
             _raw_data = self.get_xml()
             # parse the raw data
@@ -294,6 +295,12 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
             _converted_data = self.convert_data(_parsed_data)
             # now pop off any xxxx_units fields
             _packet_data = dict(_converted_data)
+            # convert rain to a delta if required
+            if 'rain' in _packet_data and not self.rain_delta:
+                _old_rain = _packet_data['rain']
+                _packet_data['rain'] = weewx.wxformulas.calculate_rain(_packet_data['rain'],
+                                                                       self.old_rain)
+                self.old_rain = _old_rain
             for _keys in _converted_data:
                 if _keys.endswith('_units'):
                     _ = _packet_data.pop(_keys)
@@ -411,6 +418,11 @@ class XmlObject(object):
 
         # the path and file name of the xml source file
         self.path = path
+
+
+    def read_file(self):
+        """Read xml data from our file."""
+
         # get the parsed xml tree, log an error if it cannot be parsed
         try:
             self.tree = ET.parse(self.path)
