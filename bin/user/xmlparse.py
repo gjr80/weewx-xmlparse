@@ -26,18 +26,21 @@
 #
 """A weeWX driver that reads data from a XML file.
 
-This driver will ...
-
-
-To use this driver, put this file in the weewx user directory, then make
-the following changes to weewx.conf:
+This driver will poll a XML format file and map data from user specified XML
+elements and attributes to WeeWX fields. The driver may operate in one of two
+modes. Timestamp slave mode where the timestamp of loop packets emitted by the
+driver is derived from a XML element or attribute. Timestamp master mode is
+where the driver allocates the timestamp to loop packets emitted by the driver
+based on the WeeWX system clock. XML elements and/or attributes are mapped to
+WeeWX fields via user specified XPath expressions.
+Refer https://www.w3.org/TR/1999/REC-xpath-19991116/
 
 To use this driver:
 
-1.  Copy this file to /home/weewx/bin/user
+1.  Copy this file to /home/weewx/bin/user or /usr/share/weewx/user depending
+on your WeeWX install.
 
-2.  Add the following section to weewx.conf setting model, port and address
-options as required:
+2.  Add the following section to weewx.conf setting options as required:
 
 ##############################################################################
 [XML]
@@ -129,7 +132,7 @@ options as required:
 
 ##############################################################################
 
-3.  Edit weewx.conf as follows:
+3.  Make the following further changes to weewx.conf as follows:
     - under [Station] set station_type = XML
     - under [StdArchive] ensure record_generation = software
 
@@ -141,7 +144,7 @@ options as required:
 
     $ PYTHONPATH=/usr/share/weewx python /usr/share/weewx/user/xmlparse.py
 
-5.  To run the driver udner WeeWX stop then start WeeWX:
+5.  To run the driver under WeeWX stop then start WeeWX:
 
     $ sudo systemctl restart weewx
 
@@ -156,6 +159,9 @@ options as required:
 
 Known isues/limitations:
 -   only supports date-time data in local time or GMT/UTC
+-   only supports the following unit codes:
+    -
+-
 """
 
 from __future__ import with_statement
@@ -184,6 +190,12 @@ if weewx.__version__ < "3":
     raise weewx.UnsupportedFeature("WeeWX 3.x or greater is required, found %s" %
                                    weewx.__version__)
 
+
+class MissingOption(StandardError):
+    """Exception thrown when a mandatory option is invalid or otherwise has not
+    been included in a config stanza."""
+
+
 def logmsg(dst, msg):
     syslog.syslog(dst, 'xmlparse: %s' % msg)
 
@@ -196,14 +208,6 @@ def loginf(msg):
 def logerr(msg):
     logmsg(syslog.LOG_ERR, msg)
 
-def _get_as_float(d, s):
-    v = None
-    if s in d:
-        try:
-            v = float(d[s])
-        except ValueError as e:
-            logerr("cannot read value for '%s': %s" % (s, e))
-    return v
 
 def loader(config_dict, engine):
     return XmlParseDriver(**config_dict[DRIVER_NAME])
@@ -220,7 +224,14 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
         # get an XmlObject to facilitate reading data from the XML file
         self.xml = XmlObject(self.path)
         # how often to poll the xml file, seconds
-        self.poll_interval = float(xml_config_dict.get('poll_interval', 2.5))
+        # wrap in try..except so we can trap an invalid or missing
+        # poll_interval config option
+        try:
+            self.poll_interval = float(xml_config_dict.get('poll_interval'))
+        except ValueError, TypeError:
+            raise MissingOption("Missing or invalid 'poll_interval' config option")
+        # operate in master or slave mode
+        self.mode = xml_config_dict.get('timestamp_mode', 'master')
         # date-time format string
         self.date_time_format = xml_config_dict.get('date_time_format')
         # time zone
@@ -278,36 +289,56 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
                                                                       False))
         self.old_rain = None
 
+        # log key config items
         loginf("data file is %s" % self.path)
         loginf("polling interval is %s" % self.poll_interval)
-        loginf("time_zone is %s" % (self.time_zone, ))
+        if self.mode == 'master':
+            # timestamps are derived from system clock
+            loginf("timestamps will be derived from the WeeWX system clock")
+        else:
+            # timestamps are derived from the XML data
+            loginf("timestamps will be derived from the XML source")
+            loginf("time_zone is %s" % (self.time_zone, ))
         loginf('sensor map is %s' % self.sensor_map)
 
     def genLoopPackets(self):
+        _last_dateTime = int(time.time() - 1)
         while True:
             # read xml from the source file
             self.xml.read_file()
+            # get the timestamp we might use
+            _ts = int(time.time())
             # read whatever values we can get from the file
             _raw_data = self.get_xml()
             # parse the raw data
             _parsed_data = self.parse_raw_data(_raw_data)
             # convert the parsed data
             _converted_data = self.convert_data(_parsed_data)
-            # now pop off any xxxx_units fields
+            # we are going to pop off any xxxx_units fields so take a copy of
+            # our converted data dict
             _packet_data = dict(_converted_data)
+            # now pop off any xxxx_units fields
+            for _keys in _converted_data:
+                if _keys.endswith('_units'):
+                    _ = _packet_data.pop(_keys)
             # convert rain to a delta if required
             if 'rain' in _packet_data and not self.rain_delta:
                 _old_rain = _packet_data['rain']
                 _packet_data['rain'] = weewx.wxformulas.calculate_rain(_packet_data['rain'],
                                                                        self.old_rain)
                 self.old_rain = _old_rain
-            for _keys in _converted_data:
-                if _keys.endswith('_units'):
-                    _ = _packet_data.pop(_keys)
             # map the data into a weewx loop packet
             _packet = {'usUnits': weewx.METRICWX}
             _packet.update(_packet_data)
-            yield _packet
+            # if operating in timestamp master mode set the dateTime field to a
+            # system generated timestamp
+            if self.mode == 'master':
+                _packet['dateTime'] = _ts
+            # we only yield a packet if this packets dateTime is greter than
+            # that of the last
+            if _packet['dateTime'] > _last_dateTime:
+                yield _packet
+                _last_dateTime = _packet['dateTime']
             time.sleep(self.poll_interval)
 
     @property
@@ -338,7 +369,7 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
 
         _data = dict()
         for _field, _value in _raw_data.iteritems():
-            if _field == 'dateTime':
+            if _field == 'dateTime' and self.mode == 'slave':
                 _data[_field] = self.parse_time(_value, _raw_data['timezone'])
             elif _field == 'timezone' or _field.endswith('_units'):
                 _data[_field] = _value
@@ -348,7 +379,7 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
                 except ValueError:
                     _parsed = None
                 _data[_field] = _parsed
-        _ = _data.pop('timezone')
+        _ = _data.pop('timezone', None)
         return _data
 
     def get_xml(self):
@@ -359,10 +390,11 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
         for _sensor, _map in self.sensor_map.iteritems():
             _data[_sensor] = self.xml.get_xpath(_map['obs']['xpath'], _map['obs']['arg'])
         # get timezone data
-        if hasattr(self.time_zone, '__iter__'):
-            _data['timezone'] = self.xml.get_xpath(self.time_zone[0], self.time_zone[1])
-        else:
-            _data['timezone'] = self.time_zone
+        if self.mode == 'slave':
+            if hasattr(self.time_zone, '__iter__'):
+                _data['timezone'] = self.xml.get_xpath(self.time_zone[0], self.time_zone[1])
+            else:
+                _data['timezone'] = self.time_zone
         # get unit data
         for _sensor, _map in self.sensor_map.iteritems():
             if 'units' in _map and hasattr(_map['units'], '__iter__'):
