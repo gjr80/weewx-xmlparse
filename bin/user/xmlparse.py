@@ -163,7 +163,7 @@ on your WeeWX install.
     $ sudo /etc/init.d/weewx restart
 
 
-Known isues/limitations:
+Known issues/limitations:
 -   Only supports decoding of XML sourced date-time data in local time or
     GMT/UTC.
 -   loop packets are emitted using the METRICWX units, any sensor values that
@@ -210,11 +210,14 @@ class MissingOption(StandardError):
 def logmsg(dst, msg):
     syslog.syslog(dst, 'xmlparse: %s' % msg)
 
+
 def logdbg(msg):
     logmsg(syslog.LOG_DEBUG, msg)
 
+
 def loginf(msg):
     logmsg(syslog.LOG_INFO, msg)
+
 
 def logerr(msg):
     logmsg(syslog.LOG_ERR, msg)
@@ -222,6 +225,7 @@ def logerr(msg):
 
 def loader(config_dict, engine):
     return XmlParseDriver(**config_dict[DRIVER_NAME])
+
 
 class XmlParseDriver(weewx.drivers.AbstractDevice):
     """WeeWX driver that reads data from a XML file."""
@@ -472,7 +476,8 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
             _ts = calendar.timegm(_dt.timetuple())
         return int(_ts)
 
-    def convert_data(self, data):
+    @staticmethod
+    def convert_data(data):
         """Convert a dict of parsed data.
 
         The xmlparse driver yields METRICWX packets. Parsed XML data may use units
@@ -548,7 +553,8 @@ class XmlObject(object):
 
         # the path and file name of the xml source file
         self.path = path
-
+        # initialise the xml tree
+        self.tree = None
 
     def read_file(self):
         """Read xml data from our file."""
@@ -647,11 +653,11 @@ class XmlParseConfEditor(weewx.drivers.AbstractConfEditor):
         #
         #   WeeWX field: A WeeWX archive table field name, eg outTemp,
         #                windSpeed.
-        #   XPath spec:  An XPath specifcation string that will identify the
+        #   XPath spec:  An XPath specification string that will identify the
         #                XML element containing the data concerned. Ideally
         #                the XPath spec should uniquely identify the required
         #                element. Refer https://docs.python.org/2/library/xml.etree.elementtree.html#xpath-support
-        #   attribute:   Attritute of the element idenfified by the XPath spec
+        #   attribute:   Attribute of the element identified by the XPath spec
         #                to used as the data source. Optional.
         #
         # eg:
@@ -663,9 +669,9 @@ class XmlParseConfEditor(weewx.drivers.AbstractConfEditor):
             # insert other maps as requried
 
         # Define units used for the source data. Units may be contained in the
-        # XML data or may be explicity defined as a WeeWX unit string. If units
+        # XML data or may be explicitly defined as a WeeWX unit string. If units
         # for a WeeWX field are omitted or otherwise invalid no unit conversion
-        # of the raw data isperformed for that field.
+        # of the raw data is performed for that field.
         #
         # Entries to be in the format:
         #
@@ -679,12 +685,12 @@ class XmlParseConfEditor(weewx.drivers.AbstractConfEditor):
         #
         #   WeeWX field: A WeeWX archive table field name, eg outTemp,
         #                windSpeed.
-        #   XPath spec:  An XPath specifcation string that will identify the
+        #   XPath spec:  An XPath specification string that will identify the
         #                XML element containing the unit data concerned.
         #                Ideally the XPath spec should uniquely identify the
         #                required element.
         #                Refer https://docs.python.org/2/library/xml.etree.elementtree.html#xpath-support
-        #   attribute:   Attritute of the element idenfified by the XPath spec
+        #   attribute:   Attribute of the element identified by the XPath spec
         #                to used as the unit string. Optional.
         #   WeeWX unit code: A WeeWX unit, eg meter, degree_C. WeeWX units are
         #                    listed at http://weewx.com/docs/customizing.htm#units
@@ -710,7 +716,6 @@ class XmlParseConfEditor(weewx.drivers.AbstractConfEditor):
         settings['path'] = self._prompt('path',
                                         XmlParseDriver.DEFAULT_PATH)
         return settings
-
 
 
 # To use this driver in standalone mode for testing or development, use one of
@@ -817,7 +822,7 @@ if __name__ == "__main__":
         # first a blank line for aesthetics
         print
         # now the data
-        print  minidom.parseString(xml.tostring).toprettyxml(indent="   ", newl='')
+        print minidom.parseString(xml.tostring).toprettyxml(indent="   ", newl='')
 
     def run_driver(xml_config_dict):
         """Run the xmlparse driver.
