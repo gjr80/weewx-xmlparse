@@ -64,6 +64,12 @@ on your WeeWX install.
     # time is assumed.
     time_zone = devices/device[name='Weatherstation']/records/record/time, zone
 
+    # Timestamp mode. When in 'timestamp slave' mode loop packet timestamps are
+    # determined from an element/attribute in the XML data. 'timestamp master'
+    # mode uses the WeeWX system clock for loop packet timestamps.
+    # String slave|master. Default is master.
+    timestamp_mode = master
+
     # Maps used to map XML data to WeeWX fields
     [[sensor_map]]
 
@@ -158,10 +164,15 @@ on your WeeWX install.
 
 
 Known isues/limitations:
--   only supports date-time data in local time or GMT/UTC
--   only supports the following unit codes:
-    -
--
+-   Only supports decoding of XML sourced date-time data in local time or
+    GMT/UTC.
+-   loop packets are emitted using the METRICWX units, any sensor values that
+    use different units (degrees F) need to have a suitable units mapping and
+    conversion functions. At present only the following unit codes are
+    implemented for non-METRICWX units:
+    -   'Degrees F'
+    -   'km/h'
+    -   'hPa'
 """
 
 from __future__ import with_statement
@@ -231,7 +242,7 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
         except ValueError, TypeError:
             raise MissingOption("Missing or invalid 'poll_interval' config option")
         # operate in master or slave mode
-        self.mode = xml_config_dict.get('timestamp_mode', 'master')
+        self.mode = xml_config_dict.get('timestamp_mode', 'master').lower()
         # date-time format string
         self.date_time_format = xml_config_dict.get('date_time_format')
         # time zone
@@ -302,6 +313,11 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
         loginf('sensor map is %s' % self.sensor_map)
 
     def genLoopPackets(self):
+        """Generate loop packets continuously."""
+
+        # there is a check that the timestamp of the current packet is later
+        # than that of the previous packet, so initialise with a timestamp
+        # from the past
         _last_dateTime = int(time.time() - 1)
         while True:
             # read xml from the source file
@@ -339,51 +355,24 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
             if _packet['dateTime'] > _last_dateTime:
                 yield _packet
                 _last_dateTime = _packet['dateTime']
+            # sleep until its time to do it all again
             time.sleep(self.poll_interval)
 
     @property
     def hardware_name(self):
+        """Property to return the 'hardware' name."""
         return "XmlParse"
 
-    def convert_data(self, data):
-        """Convert a dict of parsed data."""
-
-        _converted = dict()
-        for _field, _value in data.iteritems():
-            _conv_value = _value
-            _units_field = ''.join((_field, '_units'))
-            if _units_field in data:
-                # we have a units field for _field
-                _conv_func = CONV_FUNCS.get(data[_units_field])
-                if _conv_func:
-                    _conv_value = _conv_func(_value)
-                else:
-                    # do we need log this ?
-                    pass
-            _converted[_field] = _conv_value
-        return _converted
-
-
-    def parse_raw_data(self, _raw_data):
-        """Parse a dict of raw data."""
-
-        _data = dict()
-        for _field, _value in _raw_data.iteritems():
-            if _field == 'dateTime' and self.mode == 'slave':
-                _data[_field] = self.parse_time(_value, _raw_data['timezone'])
-            elif _field == 'timezone' or _field.endswith('_units'):
-                _data[_field] = _value
-            else:
-                try:
-                    _parsed = float(_value)
-                except ValueError:
-                    _parsed = None
-                _data[_field] = _parsed
-        _ = _data.pop('timezone', None)
-        return _data
-
     def get_xml(self):
-        """Get a dict of raw data from the XML source file."""
+        """Get a dict of raw data from the XML source file.
+
+        Iterates over the sensor map looking for sensor values and units in the
+        XML tree. If found the sensor value is added to a dict. Time zone is
+        only considerd if operating in timezone slave mode.
+
+        Returns:
+            Dict containing sensor values and units.
+        """
 
         _data = dict()
         # get sensor mapped data
@@ -403,8 +392,72 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
                 _data[_field] = self.xml.get_xpath(_map['units'][0], _map['units'][1])
         return _data
 
+    def parse_raw_data(self, raw_data):
+        """Parse a dict of raw data.
+
+        Takes a data dict of raw data in string format and parses fields
+        appropriately. The following parsing is applied:
+
+            dateTime:     interpreted as a timestamp if operating in slave
+                          timestamp mode
+            timezone:     unchanged
+            units fields: unchanged
+            other fields: converted to float or None if float conversion is not
+                          possible
+
+        Input:
+            raw_data: dict containing the raw data (including units fields) in
+                      obs:value format
+
+        Returns:
+            Dict containing all original fields with data parsed appropriately.
+        """
+
+        # empty dict for parsed data
+        _data = dict()
+        # iterate over all input data fields
+        for _field, _value in raw_data.iteritems():
+            # interpret dateTime formatted string as a timestamp if we are in
+            # timestamp slave mode
+            if _field == 'dateTime' and self.mode == 'slave':
+                # store the parsed dateTime field in our results dict
+                _data[_field] = self.parse_time(_value, raw_data['timezone'])
+            # pass field timezone and any units fields through unchanged
+            elif _field == 'timezone' or _field.endswith('_units'):
+                # store the field in our results dict
+                _data[_field] = _value
+            # otherwise treat the field as a numeric obs and try to convert to
+            # a float
+            else:
+                try:
+                    _parsed = float(_value)
+                except ValueError:
+                    # cannot convert to a float so set to None - there is
+                    # something there but its not valid
+                    _parsed = None
+                # store the parsed obs in our results dict
+                _data[_field] = _parsed
+        # timezone is no longer needed so pop off the timezone field
+        _ = _data.pop('timezone', None)
+        # return the parsed data dict
+        return _data
+
     def parse_time(self, value, zone):
-        """Parse a formatted string and return a Unix epoch timestamp."""
+        """Parse a formatted string and return a Unix epoch timestamp.
+
+        Takes a string representing a date-time and returns the corresponding
+        epoch timestamp. WeeWX is not timezone aware so only limited timezone
+        support is provided through use of the zone parameter.
+
+        Inputs:
+            value: String containing the date-time to be parsed.
+            zone:  String containing time zone code of the time zone that value
+                   is to be interpreted as. At present only local time and
+                   GMT/UTC is supported.
+
+        Returns:
+            Epoch timestamp of value and zone.
+        """
 
         try:
             _dt = datetime.datetime.strptime(value,
@@ -418,6 +471,49 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
             # we have a time in GMT/UTC
             _ts = calendar.timegm(_dt.timetuple())
         return int(_ts)
+
+    def convert_data(self, data):
+        """Convert a dict of parsed data.
+
+        The xmlparse driver yields METRICWX packets. Parsed XML data may use units
+        that are unknown to WeeWX or may use unit codes that are different to
+        those used by WeeWX. Parsed data is converted to the relevant WeeWX
+        METRICWX units by use of standard conversion functions defined in
+        weewx.units where possible. Additional XML unit codes may be supported
+        by adding appropriate key-value pairs to CONV_FUNCS.
+
+        Parsed data that does not have a corresponding units field entry or for
+        which there is no conversion function lookup entry is left unchanged.
+
+        Input:
+            data: dict containing the parsed data (including units fields) in
+                  obs:value format
+
+        Returns:
+            Dict containing all original data with obs values converted to
+            METRICWX units.
+        """
+
+        # empty dict for converted data
+        _converted = dict()
+        # iterate over all input data fields
+        for _field, _value in data.iteritems():
+            # assume the converted value is the starting value
+            _conv_value = _value
+            # if there was a units field for this field what would it be
+            _units_field = ''.join((_field, '_units'))
+            # do we have a units field
+            if _units_field in data:
+                # we have a units field for _field so what function do we use
+                # to convert the data
+                _conv_func = CONV_FUNCS.get(data[_units_field])
+                # if we have a conversion function then apply it
+                if _conv_func:
+                    _conv_value = _conv_func(_value)
+            # add the converted data the results dict
+            _converted[_field] = _conv_value
+        # return the converted data dict
+        return _converted
 
 
 class XmlObject(object):
@@ -435,6 +531,8 @@ class XmlObject(object):
               text file
 
     Methods:
+        read_file: Read an XM file and parse the contents using the ElementTree
+                   library.
         get_xpath: Extract an XML data value given an XPath specification. If
                    an optional attrib value is given the data extracted is the
                    'attrib' attribute of the element specified is returned.
