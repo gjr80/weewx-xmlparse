@@ -11,10 +11,10 @@
 #
 #                       Installer for XML parse driver
 #
-# Version: 0.1.0                                        Date: 25 September 2018
+# Version: 0.1.0                                        Date: 3 October 2018
 #
 # Revision History
-#   25 September 2018    v0.1.0
+#   3 October 2018      v0.1.0
 #       - initial implementation
 #
 

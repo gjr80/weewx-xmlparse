@@ -18,10 +18,10 @@
 # You should have received a copy of the GNU General Public License along with
 # this program.  If not, see http://www.gnu.org/licenses/.
 #
-# Version: 0.1.0                                    Date: 28 September 2018
+# Version: 0.1.0                                    Date: 3 October 2018
 #
 # Revision History
-#   28 September 2018   v0.1.0
+#   3 October       v0.1.0
 #       - initial release
 #
 """A weeWX driver that reads data from a XML file.
@@ -227,13 +227,17 @@ def loader(config_dict, engine):
     return XmlParseDriver(**config_dict[DRIVER_NAME])
 
 
+def confeditor_loader():
+    return XmlParseConfEditor()
+
+
 class XmlParseDriver(weewx.drivers.AbstractDevice):
     """WeeWX driver that reads data from a XML file."""
 
     DEFAULT_POLL = 10
     DEFAULT_PATH = 'enter path and file name of XML source'
 
-    def __init__(self, xml_config_dict):
+    def __init__(self, **xml_config_dict):
         # where to find the xml file
         self.path = xml_config_dict.get('path', '/var/tmp/sensor.xml')
         # get an XmlObject to facilitate reading data from the XML file
