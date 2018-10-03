@@ -43,7 +43,7 @@ on your WeeWX install.
 2.  Add the following section to weewx.conf setting options as required:
 
 ##############################################################################
-[XML]
+[XmlParse]
 
     # Time between polls of the XML source file in seconds
     poll_interval = 10
@@ -139,7 +139,7 @@ on your WeeWX install.
 ##############################################################################
 
 3.  Make the following further changes to weewx.conf as follows:
-    - under [Station] set station_type = XML
+    - under [Station] set station_type = XmlParse
     - under [StdArchive] ensure record_generation = software
 
 4.  To run the driver in standalone mode for testing/development:
@@ -622,7 +622,7 @@ class XmlParseConfEditor(weewx.drivers.AbstractConfEditor):
     @property
     def default_stanza(self):
         return """
-[XML]
+[XmlParse]
     # This section is for the XML parse driver.
 
     # Time between polls of the XML source file in seconds
@@ -775,7 +775,7 @@ if __name__ == "__main__":
         # inform the user of the config file being used
         print "Using configuration file %s" % config_path
         # extract the XML driver stanza as a config dict
-        xml_config_dict = config_dict.get('XML', {})
+        xml_config_dict = config_dict.get(DRIVER_NAME, {})
 
         # run the driver
         if opts.run_driver:
