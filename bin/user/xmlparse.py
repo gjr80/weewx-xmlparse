@@ -235,7 +235,8 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
     """WeeWX driver that reads data from a XML file."""
 
     DEFAULT_POLL = 10
-    DEFAULT_PATH = 'enter path and file name of XML source'
+    DEFAULT_PATH = '/var/tmp/sensors.xml'
+    DEFAULT_MODE = 'master'
 
     def __init__(self, **xml_config_dict):
         # where to find the xml file
@@ -619,6 +620,7 @@ class XmlObject(object):
 
 
 class XmlParseConfEditor(weewx.drivers.AbstractConfEditor):
+
     @property
     def default_stanza(self):
         return """
@@ -636,13 +638,19 @@ class XmlParseConfEditor(weewx.drivers.AbstractConfEditor):
 
     # Format of the date-time string used to determine the data timestamp. Uses
     # python strptime() format codes. Enclose in quotes.
-    date_time_format = "%Y-%m-%d %H:%M:%S"
+    date_time_format = "%%Y-%%m-%%d %%H:%%M:%%S"
 
     # Timezone of the date-time string used to determine the data tiemstamp.
     # Can be 'GMT' or 'UTC' to use GMT or UTC or can be an XPath spec and
     # attribute if the timezone is specified in the XML file. If omitted local
     # time is assumed.
-    time_zone = enter time zone code or XPath spec
+    time_zone =
+
+    # Timestamp mode. When in 'timestamp slave' mode loop packet timestamps are
+    # determined from an element/attribute in the XML data. 'timestamp master'
+    # mode uses the WeeWX system clock for loop packet timestamps.
+    # String slave|master. Default is master.
+    timestamp_mode = %s
 
     # Maps used to map XML data to WeeWX fields
     [[sensor_map]]
@@ -708,18 +716,27 @@ class XmlParseConfEditor(weewx.drivers.AbstractConfEditor):
         #   outTemp = degree_C
         [[[units]]]
             # insert maps as required
-""" % (XmlParseDriver.DEFAULT_POLL, XmlParseDriver.DEFAULT_PATH)
+""" % (XmlParseDriver.DEFAULT_POLL, XmlParseDriver.DEFAULT_PATH, XmlParseDriver.DEFAULT_MODE)
 
     def prompt_for_settings(self):
         settings = dict()
-        print "Specify the polling interval to be used in seconds."
+        print "Specify the polling interval to be used in seconds"
         settings['poll_interval'] = self._prompt('polling interval',
                                                  XmlParseDriver.DEFAULT_POLL)
-        print "Specify the path and file name of the XML source file,"
-        print "eg /var/tmp/sensor.xml"
+        print "Specify the path and file name of the XML source file"
         settings['path'] = self._prompt('path',
                                         XmlParseDriver.DEFAULT_PATH)
+        print "Specify timestamp mode, 'master' to derive timestamps from"
+        print "WeeWX system clock or 'slave' to derive timestamps from the"
+        print "XML source file"
+        settings['timestamp_mode'] = self._prompt('timestamp_mode',
+                                                  XmlParseDriver.DEFAULT_MODE)
         return settings
+
+    def modify_config(self, config_dict):
+        print """
+Setting record_generation to software."""
+        config_dict['StdArchive']['record_generation'] = 'software'
 
 
 # To use this driver in standalone mode for testing or development, use one of
