@@ -375,7 +375,7 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
                 if 'rain' in _packet_data and not self.rain_delta:
                     _old_rain = _packet_data['rain']
                     _packet_data['rain'] = weewx.wxformulas.calculate_rain(_packet_data['rain'],
-                                                                        self.old_rain)
+                                                                           self.old_rain)
                     self.old_rain = _old_rain
                 # map the data into a weewx loop packet
                 _packet = {'usUnits': weewx.METRICWX}
@@ -881,7 +881,7 @@ if __name__ == "__main__":
 
         Runs the XML driver as it would be run with WeeWX but without the
         overheads of WeeWX. Loop data only is emitted direct to the console in
-        much the same way as wehn running WeeWX directly.
+        much the same way as when running WeeWX directly.
         """
 
         # obtain and XmlParseDriver object
