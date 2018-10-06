@@ -18,10 +18,10 @@
 # You should have received a copy of the GNU General Public License along with
 # this program.  If not, see http://www.gnu.org/licenses/.
 #
-# Version: 0.1.0                                    Date: 3 October 2018
+# Version: 0.1.0                                    Date: 6 October 2018
 #
 # Revision History
-#   3 October       v0.1.0
+#   6 October       v0.1.0
 #       - initial release
 #
 """A weeWX driver that reads data from a XML file.
@@ -73,7 +73,8 @@ on your WeeWX install.
     # Maps used to map XML data to WeeWX fields
     [[sensor_map]]
 
-        # Mapping of XML data to WeeWX fields. Must include a map for WeeWX field dateTime.
+        # Mapping of XML data to WeeWX fields. Must include a map for WeeWX
+        # field dateTime.
         #
         # Entries to be in the format:
         #
@@ -215,6 +216,16 @@ def logdbg(msg):
     logmsg(syslog.LOG_DEBUG, msg)
 
 
+def logdbg2(msg):
+    if weewx.debug >= 2:
+        logmsg(syslog.LOG_DEBUG, msg)
+
+
+def logdbg3(msg):
+    if weewx.debug >= 3:
+        logmsg(syslog.LOG_DEBUG, msg)
+
+
 def loginf(msg):
     logmsg(syslog.LOG_INFO, msg)
 
@@ -257,7 +268,8 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
         # time zone
         _time_zone = xml_config_dict.get('time_zone')
         if _time_zone is not None:
-            # we have a specified time zone, is it an Xpath spec or a timezone code
+            # we have a specified time zone, is it an Xpath spec or a timezone
+            # code
             if hasattr(_time_zone, '__iter__'):
                 # its a list so treat it as a complex Xpath spec
                 _arg = _time_zone[1] if len(_time_zone) > 1 else None
@@ -335,34 +347,44 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
             _ts = int(time.time())
             # read whatever values we can get from the file
             _raw_data = self.get_xml()
+            # log raw data if debug >= 2
+            logdbg2("raw data: %s" % weeutil.weeutil.to_sorted_string(_raw_data))
             # parse the raw data
             _parsed_data = self.parse_raw_data(_raw_data)
-            # convert the parsed data
-            _converted_data = self.convert_data(_parsed_data)
-            # we are going to pop off any xxxx_units fields so take a copy of
-            # our converted data dict
-            _packet_data = dict(_converted_data)
-            # now pop off any xxxx_units fields
-            for _keys in _converted_data:
-                if _keys.endswith('_units'):
-                    _ = _packet_data.pop(_keys)
-            # convert rain to a delta if required
-            if 'rain' in _packet_data and not self.rain_delta:
-                _old_rain = _packet_data['rain']
-                _packet_data['rain'] = weewx.wxformulas.calculate_rain(_packet_data['rain'],
-                                                                       self.old_rain)
-                self.old_rain = _old_rain
-            # map the data into a weewx loop packet
-            _packet = {'usUnits': weewx.METRICWX}
-            _packet.update(_packet_data)
+            # log raw data if debug >= 3
+            logdbg3("parsed data: %s" % weeutil.weeutil.to_sorted_string(_parsed_data))
             # if operating in timestamp master mode set the dateTime field to a
             # system generated timestamp
             if self.mode == 'master':
-                _packet['dateTime'] = _ts
-            # we only yield a packet if this packets dateTime is greter than
-            # that of the last
-            if _packet['dateTime'] > _last_dateTime:
+                _parsed_data['dateTime'] = _ts
+            # we will only yield a packet if this packets dateTime is greater than
+            # that of the last so we can discard this data if this is not the case
+            if _parsed_data['dateTime'] > _last_dateTime:
+                # convert the parsed data
+                _converted_data = self.convert_data(_parsed_data)
+                # log converted data if debug >= 3
+                logdbg3("converted data: %s" % weeutil.weeutil.to_sorted_string(_converted_data))
+                # we are going to pop off any xxxx_units fields so take a copy of
+                # our converted data dict
+                _packet_data = dict(_converted_data)
+                # now pop off any xxxx_units fields
+                for _keys in _converted_data:
+                    if _keys.endswith('_units'):
+                        _ = _packet_data.pop(_keys)
+                # convert rain to a delta if required
+                if 'rain' in _packet_data and not self.rain_delta:
+                    _old_rain = _packet_data['rain']
+                    _packet_data['rain'] = weewx.wxformulas.calculate_rain(_packet_data['rain'],
+                                                                        self.old_rain)
+                    self.old_rain = _old_rain
+                # map the data into a weewx loop packet
+                _packet = {'usUnits': weewx.METRICWX}
+                _packet.update(_packet_data)
+                # yield the packet
                 yield _packet
+                # log packet if debug >= 2
+                logdbg2("packet: %s" % weeutil.weeutil.to_sorted_string(_packet))
+                # record the time of this packet as the time of the last packet
                 _last_dateTime = _packet['dateTime']
             # sleep until its time to do it all again
             time.sleep(self.poll_interval)
@@ -386,11 +408,19 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
         _data = dict()
         # get sensor mapped data
         for _sensor, _map in self.sensor_map.iteritems():
-            _data[_sensor] = self.xml.get_xpath(_map['obs']['xpath'], _map['obs']['arg'])
+            _data[_sensor] = self.xml.get_xpath(_map['obs']['xpath'],
+                                                _map['obs']['arg'])
         # get timezone data
         if self.mode == 'slave':
             if hasattr(self.time_zone, '__iter__'):
-                _data['timezone'] = self.xml.get_xpath(self.time_zone[0], self.time_zone[1])
+                # wrap in try..except to catch the case where the xpath spec
+                # returns None or is invalid
+                try:
+                    _data['timezone'] = self.xml.get_xpath(self.time_zone[0],
+                                                           self.time_zone[1])
+                except AttributeError:
+                    _data['timezone'] = None
+                    logdbg("Time zone could not be found in XML data")
             else:
                 _data['timezone'] = self.time_zone
         # get unit data
@@ -398,7 +428,8 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
             if 'units' in _map and hasattr(_map['units'], '__iter__'):
                 # we have a units map and its a list/tuple (so its a Xpath spec)
                 _field = '_'.join((_sensor, 'units'))
-                _data[_field] = self.xml.get_xpath(_map['units'][0], _map['units'][1])
+                _data[_field] = self.xml.get_xpath(_map['units'][0],
+                                                   _map['units'][1])
         return _data
 
     def parse_raw_data(self, raw_data):
@@ -485,12 +516,12 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
     def convert_data(data):
         """Convert a dict of parsed data.
 
-        The xmlparse driver yields METRICWX packets. Parsed XML data may use units
-        that are unknown to WeeWX or may use unit codes that are different to
-        those used by WeeWX. Parsed data is converted to the relevant WeeWX
-        METRICWX units by use of standard conversion functions defined in
-        weewx.units where possible. Additional XML unit codes may be supported
-        by adding appropriate key-value pairs to CONV_FUNCS.
+        The xmlparse driver yields METRICWX packets. Parsed XML data may use
+        units that are unknown to WeeWX or may use unit codes that are
+        different to those used by WeeWX. Parsed data is converted to the
+        relevant WeeWX METRICWX units by use of standard conversion functions
+        defined in weewx.units where possible. Additional XML unit codes may be
+        supported by adding appropriate key-value pairs to CONV_FUNCS.
 
         Parsed data that does not have a corresponding units field entry or for
         which there is no conversion function lookup entry is left unchanged.
@@ -568,7 +599,7 @@ class XmlObject(object):
         try:
             self.tree = ET.parse(self.path)
         except Exception as e:
-            logerr("xml parse failed: %s" % e)
+            logerr("XML parse failed: %s" % e)
 
     def get_xpath(self, xpath, attrib=None):
         """Return a value from an XML tree given an get XPath spec.
@@ -655,7 +686,8 @@ class XmlParseConfEditor(weewx.drivers.AbstractConfEditor):
     # Maps used to map XML data to WeeWX fields
     [[sensor_map]]
 
-        # Mapping of XML data to WeeWX fields. Must include a map for WeeWX field dateTime.
+        # Mapping of XML data to WeeWX fields. Must include a map for WeeWX field
+        # dateTime.
         #
         # Entries to be in the format:
         #
@@ -716,21 +748,23 @@ class XmlParseConfEditor(weewx.drivers.AbstractConfEditor):
         #   outTemp = degree_C
         [[[units]]]
             # insert maps as required
-""" % (XmlParseDriver.DEFAULT_POLL, XmlParseDriver.DEFAULT_PATH, XmlParseDriver.DEFAULT_MODE)
+""" % (XmlParseDriver.DEFAULT_POLL,
+       XmlParseDriver.DEFAULT_PATH,
+       XmlParseDriver.DEFAULT_MODE)
 
     def prompt_for_settings(self):
         settings = dict()
         print "Specify the polling interval to be used in seconds"
-        settings['poll_interval'] = self._prompt('polling interval',
-                                                 XmlParseDriver.DEFAULT_POLL)
+        settings['poll_interval'] = self._prompt('poll_interval',
+                                                 dflt=XmlParseDriver.DEFAULT_POLL)
         print "Specify the path and file name of the XML source file"
         settings['path'] = self._prompt('path',
-                                        XmlParseDriver.DEFAULT_PATH)
+                                        dflt=XmlParseDriver.DEFAULT_PATH)
         print "Specify timestamp mode, 'master' to derive timestamps from"
         print "WeeWX system clock or 'slave' to derive timestamps from the"
         print "XML source file"
         settings['timestamp_mode'] = self._prompt('timestamp_mode',
-                                                  XmlParseDriver.DEFAULT_MODE)
+                                                  dflt=XmlParseDriver.DEFAULT_MODE)
         return settings
 
     def modify_config(self, config_dict):
@@ -762,25 +796,21 @@ if __name__ == "__main__":
                           help='display driver version number')
         parser.add_option('--config', dest='config_path', metavar='CONFIG_FILE',
                           help="use configuration file CONFIG_FILE.")
-        parser.add_option('--debug', dest='debug', action='store', type='int',
-                          help='display diagnostic information while running')
-        parser.add_option('--run-driver', dest='run_driver', action='store_true',
+        parser.add_option('--run-driver', dest='run_driver',
+                          action='store_true',
                           metavar='RUN_DRIVER', help='run the xmlparse driver')
         # yet to be implemented
         # parser.add_option('--run-service', dest='run_service', action='store_true',
         #                    metavar='RUN_SERVICE', help='run the Bloomsky service')
         parser.add_option('--path', dest='xml_path', metavar='XML_PATH',
                           help='path and file name of xml file')
-        parser.add_option('--display-xml', dest='display_xml', action='store_true',
+        parser.add_option('--display-xml', dest='display_xml',
+                          action='store_true',
                           help='display the parsed xml file contents')
-        parser.add_option('--pretty-print-xml', dest='pprint_xml', action='store_true',
+        parser.add_option('--pretty-print-xml', dest='pprint_xml',
+                          action='store_true',
                           help='pretty print the parsed xml file contents')
         (opts, args) = parser.parse_args()
-
-        # if --debug raise our log level
-        if opts.debug > 0:
-            syslog.setlogmask(syslog.LOG_UPTO(syslog.LOG_DEBUG))
-            weewx.debug = opts.debug
 
         # display driver version number
         if opts.version:
@@ -843,7 +873,8 @@ if __name__ == "__main__":
         # first a blank line for aesthetics
         print
         # now the data
-        print minidom.parseString(xml.tostring).toprettyxml(indent="   ", newl='')
+        print minidom.parseString(xml.tostring).toprettyxml(indent="   ",
+                                                            newl='')
 
     def run_driver(xml_config_dict):
         """Run the xmlparse driver.
@@ -854,9 +885,10 @@ if __name__ == "__main__":
         """
 
         # obtain and XmlParseDriver object
-        driver = XmlParseDriver(xml_config_dict)
+        driver = XmlParseDriver(**xml_config_dict)
         # generate and display loop packets indefinitely
         for packet in driver.genLoopPackets():
-            print weeutil.weeutil.timestamp_to_string(packet['dateTime']), packet
+            print (weeutil.weeutil.timestamp_to_string(packet['dateTime']),
+                   weeutil.weeutil.to_sorted_string(packet))
 
     main()
