@@ -541,16 +541,19 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
         for _field, _value in data.iteritems():
             # assume the converted value is the starting value
             _conv_value = _value
-            # if there was a units field for this field what would it be
-            _units_field = ''.join((_field, '_units'))
-            # do we have a units field
-            if _units_field in data:
-                # we have a units field for _field so what function do we use
-                # to convert the data
-                _conv_func = CONV_FUNCS.get(data[_units_field])
-                # if we have a conversion function then apply it
-                if _conv_func:
-                    _conv_value = _conv_func(_value)
+            # we will only convert if we have a non-None value otherwise return
+            # None
+            if _value is not None:
+                # if there was a units field for this field what would it be
+                _units_field = ''.join((_field, '_units'))
+                # do we have a units field
+                if _units_field in data:
+                    # we have a units field for _field so what function do we use
+                    # to convert the data
+                    _conv_func = CONV_FUNCS.get(data[_units_field])
+                    # if we have a conversion function then apply it
+                    if _conv_func:
+                        _conv_value = _conv_func(_value)
             # add the converted data the results dict
             _converted[_field] = _conv_value
         # return the converted data dict
