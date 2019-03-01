@@ -313,7 +313,7 @@ class XmlParseDriver(weewx.drivers.AbstractDevice):
                     # we have a WeeWX unit code
                     _sensor_map[_field]['units'] = _um
                 else:
-                    print "ingoring invalid unit specification"
+                    print "ignoring invalid unit specification"
         self.sensor_map = _sensor_map
 
         # is the rain field cumulative or a delta
